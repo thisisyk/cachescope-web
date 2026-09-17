@@ -1,5 +1,9 @@
 # CacheScope Web
 
+## Project introduction / 项目介绍
+
+### English introduction
+
 **Work in progress — a personal learning and research project, not a commercial product.**
 
 I am developing CacheScope to explore reducing unnecessary LLM input while
@@ -9,25 +13,126 @@ finished service. I am sharing it to learn from real testing and community feedb
 [Try the web demo](https://thisisyk.github.io/cachescope-web/)
 | [Report an issue or suggest an improvement](https://github.com/thisisyk/cachescope-web/issues)
 
+### 中文介绍
+
+**开发中——这是个人学习与研究项目，不是商业产品。**
+
+我正在开发 CacheScope，探索如何在保留重要任务要求的前提下，减少不必要的
+大语言模型输入。这是一个实验性演示，而不是已经完成的服务。我分享它，是希望
+通过真实测试和社区反馈继续学习、改进。
+
+[试用网页版](https://thisisyk.github.io/cachescope-web/)
+| [反馈问题或提出改进建议](https://github.com/thisisyk/cachescope-web/issues)
+
 ## Technical core — 原理、公式与代码结构
 
-### Principle / 核心原理
+[English version](#technical-explanation-in-english) | [完整中文版](#中文原理与公式)
+
+### Technical explanation in English
+
+#### Principle
 
 **Personal mode changes the input; Team API mode studies reuse of computation.**
 These are different mechanisms and must be measured separately.
 
-个人模式：在支持的任务范围内，保留任务要求和所需材料，删去明确可省的内容或
-JSON 空白，从而减少交给模型的输入。当前实现是确定性规则，不是一个已经训练好、
-能理解任意任务的通用压缩模型。不能判定适用性时保留原文，产生候选后仍由用户审核。
+Personal mode reduces the input sent to a model by removing content or JSON
+whitespace that the supported rules identify as unnecessary, while retaining
+the task instructions and required material. The current implementation uses
+deterministic rules, not a trained general-purpose compressor that understands
+arbitrary tasks. When no supported transformation applies, the original is
+retained; proposed candidates still require user review.
 
-团队 API 模式：对重复的稳定前缀研究供应商缓存能否复用，必要时评估 keepalive
-是否值得。命中缓存主要可能减少重复计算及相应费用，不代表发送的 token 数减少。
-这部分属于桌面项目，不在公开网页中执行。
+Team API mode investigates whether provider caches can reuse repeated stable
+prefixes and whether keepalive is worth its additional cost. A cache hit may
+reduce repeated computation and the associated charge, but does not imply fewer
+tokens are sent. This functionality belongs to the desktop project and does not
+run on the public website.
 
-### Formulas / 核心公式
+#### 1. Local input reduction
 
 Let `x` be the original input, `x′` the candidate and `T` the same local tokenizer.
-原文和候选必须采用相同的计数规则，且原文 token 数大于零：
+Both inputs must use the same counting rules, and the original token count must
+be positive:
+
+$$
+\Delta T = T(x)-T(x'), \qquad
+r_{\mathrm{input}}=1-\frac{T(x')}{T(x)}
+$$
+
+`ΔT` is the number of local input tokens removed; `100 × r_input` is the input
+reduction percentage shown on the page.
+For the documented English JSON example, `T(x)=34` and `T(x′)=25`, so the
+measured local reduction is `9 tokens ≈ 26.47%`—not a quota-saving measurement.
+
+#### 2. Task-level optimization objective
+
+The research goal is to reduce total resources consumed in completing a task
+while keeping quality loss within a declared tolerance:
+
+$$
+\min_s \mathbb{E}[U(s)] \quad
+\text{subject to}\quad Q_0-Q_s\leq\varepsilon
+$$
+
+Here `s` is a strategy, and `U(s)` is total consumption under one consistently
+defined metric, including optimizer model calls and every task attempt. `Q_0`
+is the baseline quality score, `Q_s` is the strategy's quality score under the
+same independently defined rubric, and `ε` is the permitted quality loss.
+This is a research objective, not a globally optimal solution already computed
+by the engine. Rule checks do not replace evaluation of the model's output.
+
+#### 3. Simplified cache economics
+
+For Team API mode, a simplified expected net-benefit model is:
+
+$$
+G=p_{\mathrm{reuse}}(h_s-h_0)D-K
+$$
+
+`p_reuse` is the probability of future reuse; `h_s - h_0` is the strategy's
+improvement in cache-hit probability conditional on reuse; `D` is the cost
+avoided when one reuse becomes a hit instead of a miss; and `K` includes
+additional keepalive, write and storage costs. Only when the assumptions hold
+and `G > 0` does this simplified model support a potential net saving. The
+formula itself is not a measured result.
+
+#### 4. Measured comparison of complete tasks
+
+An actual comparison must account for the complete consumption of both arms,
+not just input length:
+
+$$
+r_{\mathrm{task}}=1-\frac{U_B}{U_A}, \qquad
+\Delta Q=Q_B-Q_A
+$$
+
+`A` is the original-task arm and `B` the optimized-task arm. Consumption includes
+failed attempts and retries; the baseline must be available and positive.
+`ΔQ` is optimized quality minus baseline quality; a negative value means lower
+quality. Both arms must use the same consumption metric and quality rubric.
+Local token reduction, total task usage, API cost and subscription quota are
+separate metrics. No universal token-to-subscription conversion is implemented.
+
+### 中文原理与公式
+
+#### 核心原理
+
+**个人模式改变输入内容；团队 API 模式研究计算复用。**
+这是两种不同的机制，必须分别测量，不能混为同一种节省。
+
+个人模式：在规则支持的任务范围内，保留任务要求和所需材料，删去规则识别为
+不必要的内容或 JSON 空白，从而减少交给模型的输入。当前实现是确定性规则，
+不是一个已经训练好、能够理解任意任务的通用压缩模型。没有适用的转换时保留
+原文；产生候选后仍需用户审核。
+
+团队 API 模式：研究供应商缓存能否复用重复的稳定前缀，以及 keepalive 是否
+值得其额外成本。缓存命中可能减少重复计算和相应费用，但不代表发送的 token
+数量减少。这部分属于桌面项目，不在公开网页中执行。
+
+#### 1. 本地输入减少
+
+设 `x` 为原文，`x′` 为候选，`T` 为同一个本地 tokenizer 的计数函数。
+原文与候选必须采用相同的计数规则，且原文 token 数必须大于零：
 
 $$
 \Delta T = T(x)-T(x'), \qquad
@@ -35,40 +140,51 @@ r_{\mathrm{input}}=1-\frac{T(x')}{T(x)}
 $$
 
 `ΔT` 是本地输入减少的 token 数，`100 × r_input` 是页面显示的输入减少百分比。
-For the documented English JSON example, `T(x)=34` and `T(x′)=25`, so the
-measured local reduction is `9 tokens ≈ 26.47%`—not a quota-saving measurement.
+在本文记录的英文 JSON 示例中，`T(x)=34`、`T(x′)=25`，因此实测本地输入减少
+`9 tokens`，约为 `26.47%`。这不是订阅额度节省的测量结果。
 
-真正的任务级目标是减少完成任务的总消耗，同时把质量损失控制在允许范围内：
+#### 2. 完整任务的优化目标
+
+研究目标是减少完成任务的总消耗，同时把质量损失控制在事先声明的容许范围内：
 
 $$
 \min_s \mathbb{E}[U(s)] \quad
 \text{subject to}\quad Q_0-Q_s\leq\varepsilon
 $$
 
-Here `s` is a strategy, `U` includes optimizer model calls and every task attempt,
-`Q` is an independently defined quality score, and `ε` is a declared tolerance.
-这是研究目标，不是当前引擎已经求解的全局最优问题；规则检查也不能替代输出质量评测。
+其中，`s` 是策略；`U(s)` 是按同一种明确指标统计的完整消耗，包含优化器的
+模型调用和每一次任务尝试；`Q_0` 是基线质量分数，`Q_s` 是优化策略的质量分数，
+两者使用同一套独立定义的评分标准；`ε` 是允许的质量损失。
+这是研究目标，并不表示当前引擎已经求出了全局最优解。规则检查也不能替代
+对模型实际输出的质量评测。
 
-团队缓存的简化净收益公式为：
+#### 3. 简化缓存经济模型
+
+团队 API 模式的简化预期净收益公式为：
 
 $$
 G=p_{\mathrm{reuse}}(h_s-h_0)D-K
 $$
 
-`p_reuse` 是未来复用概率，`h_s-h_0` 是策略带来的命中概率提升，`D` 是一次
-由 miss 变成 hit 可避免的费用，`K` 是保活、写入和存储等额外成本。只有在假设成立
-且 `G>0` 时，该简化模型才支持策略可能省钱；公式本身不是实测结果。
+`p_reuse` 是未来复用概率；`h_s-h_0` 是在发生复用的条件下，策略带来的缓存
+命中概率提升；`D` 是一次复用由 miss 变成 hit 时可避免的费用；`K` 包括额外的
+保活、写入和存储等成本。只有在假设成立且 `G>0` 时，这个简化模型才支持策略
+可能带来净节省；公式本身不是实测结果。
 
-真实对照结果要比较两组完整消耗，而不是只看输入：
+#### 4. 完整任务的实测对照
+
+真实对照应比较两组的完整消耗，而不是只比较输入长度：
 
 $$
 r_{\mathrm{task}}=1-\frac{U_B}{U_A}, \qquad
 \Delta Q=Q_B-Q_A
 $$
 
-`A` 是原始任务，`B` 是优化任务，计入失败和重试；基线必须可用且为正。
-Local token reduction, total task usage, API cost and subscription quota are
-separate metrics. No universal token-to-subscription conversion is implemented.
+`A` 是原始任务组，`B` 是优化任务组。消耗必须计入失败尝试和重试，基线必须
+可获得且为正。`ΔQ` 是优化组质量减去基线质量，负值表示质量下降。两组必须
+采用相同的消耗指标和质量评分标准。
+本地输入 token 减少、完整任务消耗、API 费用和订阅额度是不同指标。
+当前没有实现把 token 减少通用换算为订阅额度节省的公式。
 
 ### Code structure / 代码如何实现这些逻辑
 
