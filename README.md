@@ -9,6 +9,106 @@ finished service. I am sharing it to learn from real testing and community feedb
 [Try the web demo](https://thisisyk.github.io/cachescope-web/)
 | [Report an issue or suggest an improvement](https://github.com/thisisyk/cachescope-web/issues)
 
+## Technical core — 原理、公式与代码结构
+
+### Principle / 核心原理
+
+**Personal mode changes the input; Team API mode studies reuse of computation.**
+These are different mechanisms and must be measured separately.
+
+个人模式：在支持的任务范围内，保留任务要求和所需材料，删去明确可省的内容或
+JSON 空白，从而减少交给模型的输入。当前实现是确定性规则，不是一个已经训练好、
+能理解任意任务的通用压缩模型。不能判定适用性时保留原文，产生候选后仍由用户审核。
+
+团队 API 模式：对重复的稳定前缀研究供应商缓存能否复用，必要时评估 keepalive
+是否值得。命中缓存主要可能减少重复计算及相应费用，不代表发送的 token 数减少。
+这部分属于桌面项目，不在公开网页中执行。
+
+### Formulas / 核心公式
+
+Let `x` be the original input, `x′` the candidate and `T` the same local tokenizer.
+原文和候选必须采用相同的计数规则，且原文 token 数大于零：
+
+$$
+\Delta T = T(x)-T(x'), \qquad
+r_{\mathrm{input}}=1-\frac{T(x')}{T(x)}
+$$
+
+`ΔT` 是本地输入减少的 token 数，`100 × r_input` 是页面显示的输入减少百分比。
+For the documented English JSON example, `T(x)=34` and `T(x′)=25`, so the
+measured local reduction is `9 tokens ≈ 26.47%`—not a quota-saving measurement.
+
+真正的任务级目标是减少完成任务的总消耗，同时把质量损失控制在允许范围内：
+
+$$
+\min_s \mathbb{E}[U(s)] \quad
+\text{subject to}\quad Q_0-Q_s\leq\varepsilon
+$$
+
+Here `s` is a strategy, `U` includes optimizer model calls and every task attempt,
+`Q` is an independently defined quality score, and `ε` is a declared tolerance.
+这是研究目标，不是当前引擎已经求解的全局最优问题；规则检查也不能替代输出质量评测。
+
+团队缓存的简化净收益公式为：
+
+$$
+G=p_{\mathrm{reuse}}(h_s-h_0)D-K
+$$
+
+`p_reuse` 是未来复用概率，`h_s-h_0` 是策略带来的命中概率提升，`D` 是一次
+由 miss 变成 hit 可避免的费用，`K` 是保活、写入和存储等额外成本。只有在假设成立
+且 `G>0` 时，该简化模型才支持策略可能省钱；公式本身不是实测结果。
+
+真实对照结果要比较两组完整消耗，而不是只看输入：
+
+$$
+r_{\mathrm{task}}=1-\frac{U_B}{U_A}, \qquad
+\Delta Q=Q_B-Q_A
+$$
+
+`A` 是原始任务，`B` 是优化任务，计入失败和重试；基线必须可用且为正。
+Local token reduction, total task usage, API cost and subscription quota are
+separate metrics. No universal token-to-subscription conversion is implemented.
+
+### Code structure / 代码如何实现这些逻辑
+
+```text
+User input / 用户输入
+  -> app.js: interface state, request IDs, review and copy
+  -> worker.mjs: local tokenizer + Python/WASM runtime
+  -> bridge (bundled in worker): JS/Python messages, latest plan
+  -> cachescope/engine.py: capture original, dispatch, validate, seal
+       1. record_selector.py: exact supported id-to-code lookup
+       2. code_context_optimizer.py: bounded Python dependency selection
+       3. context_optimizer.py: explicit references / exact duplicate prose
+       4. prompt_compressor.py -> structural_compactor.py: JSON whitespace
+     First applicable strategy, not four transformations always chained.
+  -> candidate + metrics / 候选与计数
+  -> user review -> Engine.confirm() -> copy to the user's assistant
+```
+
+| Module / 模块 | Responsibility / 职责 | Important boundary / 边界 |
+| --- | --- | --- |
+| `cachescope/engine.py` | Select a strategy, keep the original baseline, validate and confirm | Does not call the target model or verify its answer |
+| `cachescope/config.py` | Input and confirmation limits | Default 50,000 characters, 900-second confirmation window |
+| `cachescope/models.py` | Input snapshots, counts and hashes | A hash is not semantic-quality evidence |
+| `cachescope/optimizers/record_selector.py` | Select one record under an exact query contract | Not a general database query engine |
+| `cachescope/optimizers/code_context_optimizer.py` | Parse restricted Python and keep named dependencies | Does not execute submitted code or support arbitrary repositories |
+| `cachescope/optimizers/context_optimizer.py` | Select labeled context or remove exact duplicate prose | Not general summarization or semantic deduplication |
+| `cachescope/optimizers/retention_guard.py` | Validate declared deletion spans and retained text | Does not prove omitted facts were irrelevant |
+| `desktop/structural_compactor.py` | Compact supported JSON and restore edits | Restoration requires the saved patches |
+| `web/app.js`, `web/bridge.mjs`, `web/worker.mjs` in the development tree | UI, Python bridge and browser execution | Public artifact bundles bridge/worker and exports selected Python source |
+
+In this public repository, the Python modules above are packaged inside
+[`python-sources.json`](python-sources.json), not separate directories. The
+browser files are at the repository root: [`app.js`](app.js),
+[`worker.mjs`](worker.mjs), [`index.html`](index.html) and [`styles.css`](styles.css).
+Full private-source paths describe development modules; they are not promises
+that the entire desktop source is published here.
+
+**Continue below for complete strategy contracts, guard boundaries, cache-cost
+derivations, evaluation methods and the prioritized development roadmap.**
+
 ## Reading guide
 
 This README is both a user guide and a technical design note. It distinguishes
@@ -17,6 +117,7 @@ research methods**. A formula below is not evidence that the corresponding
 measurement or prediction is already available in the web demo.
 
 - [User workflow](#how-to-use-it--用户怎么使用)
+- [Technical core / 原理、公式与代码结构](#technical-core--原理公式与代码结构)
 - [Project motivation and scope](#why-this-project-exists)
 - [Architecture](#architecture-what-runs-where)
 - [Optimization principles](#personal-mode-principle-and-formulas)
