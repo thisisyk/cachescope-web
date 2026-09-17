@@ -9,6 +9,28 @@ finished service. I am sharing it to learn from real testing and community feedb
 [Try the web demo](https://thisisyk.github.io/cachescope-web/)
 | [Report an issue or suggest an improvement](https://github.com/thisisyk/cachescope-web/issues)
 
+## Reading guide
+
+This README is both a user guide and a technical design note. It distinguishes
+**implemented browser behavior**, **desktop-only functionality**, and **proposed
+research methods**. A formula below is not evidence that the corresponding
+measurement or prediction is already available in the web demo.
+
+- [User workflow](#how-to-use-it--用户怎么使用)
+- [Project motivation and scope](#why-this-project-exists)
+- [Architecture](#architecture-what-runs-where)
+- [Optimization principles](#personal-mode-principle-and-formulas)
+- [Strategy contracts](#strategy-contracts-and-rejection-boundaries)
+- [Worked examples](#worked-examples)
+- [Preview state and data contracts](#preview-state-and-data-contracts)
+- [Cache economics](#team-api-principle-caching-and-keepalive)
+- [Evaluation protocol](#evaluation-how-an-improvement-should-be-demonstrated)
+- [Evidence and limits](#evidence-and-limitations)
+- [Current limitations](#current-limitations--当前局限性)
+- [Files and reproducibility](#public-file-map)
+- [Privacy](#privacy-and-safe-use)
+- [Roadmap and contributions](#development-direction)
+
 ## How to use it / 用户怎么使用
 
 ### Start here: no installation or API key
@@ -93,6 +115,37 @@ Built with vibe coding. Experimental: review changes before using them.
 The selected chat platform is informational; all local estimates use
 cl100k_base. Team API routing requires the desktop gateway.
 
+## Why this project exists
+
+An LLM task can consume unnecessary resources in several different ways:
+
+1. The user supplies repeated or unnecessarily formatted text.
+2. A narrow question is bundled with much more context than it needs.
+3. Multiple API requests repeat a stable prefix whose computation could be reused.
+4. A shorter prompt produces a worse answer and causes additional clarification or retries.
+
+The first two motivate the personal engine. The third motivates the separate
+team cache controller. The fourth is why prompt length alone is insufficient
+as a success metric. The goal is **less unnecessary work for an acceptable task
+outcome**, not the shortest possible text at any cost.
+
+These mechanisms should not be conflated:
+
+| Mechanism | What changes | In this browser build? | What it does not establish |
+| --- | --- | --- | --- |
+| Structural compaction | Representation of suitable JSON | Yes, supported cases | Lower total task or subscription usage |
+| Task-specific context selection | Which source material reaches the model | Yes, narrow scopes | General semantic equivalence |
+| Free-form model rewriting | Natural-language phrasing produced by a model | No | That shorter wording preserves every requirement |
+| Provider prefix caching | Reuse of provider computation | No; desktop/API work | Fewer tokens sent |
+| Keepalive | Extra requests intended to maintain reusable context | No; opt-in desktop work | That extra spending pays for itself |
+| Semantic response caching | Reuse of a previous answer | Not this browser's engine | Correctness for a new question |
+| Subscription quota observation | Reading a platform's settled usage measure | No | A universal token-to-quota conversion |
+
+CacheScope is not a new foundation model. The current public artifact combines
+a bilingual interface, a local tokenizer, bounded Python transformation rules,
+preview integrity checks and explicit user approval. Learned compression and
+reuse prediction remain separate research directions rather than assumed capabilities.
+
 ## Architecture: what runs where
 
 ```text
@@ -125,6 +178,25 @@ The browser is a personal-mode demo, not a hosted API gateway. The platform
 selector does not connect to an account, read remaining quota or change the
 tokenizer. Training an adapter is a separate research activity; the current
 browser engine is rule-based, not a deployed general-purpose compression model.
+
+### Runtime sequence and separation of responsibilities
+
+1. GitHub Pages serves static HTML, JavaScript, CSS, the tokenizer and Python/WASM files.
+2. After consent, `app.js` creates a module Web Worker and sends an initialization message.
+3. The worker starts Pyodide, loads `python-sources.json` into its virtual filesystem,
+   installs the Python engine and provides a JavaScript token-count callback.
+4. A preview request passes the current text to `Engine.preview()`. The worker
+   isolates this computation from the UI thread; it is not a remote inference server.
+5. The Python bridge retains the full latest plan in worker memory and returns
+   a smaller presentation object to the UI.
+6. Confirmation sends the current draft and approval back to the engine. The
+   confirmed result is copied only after the plan checks succeed.
+7. A new preview replaces the latest plan. There is no browser-side historical
+   experiment database or live subscription account connection in this distribution.
+
+The same Python core is reused to reduce divergence between desktop and browser
+behavior. This does not make their surrounding capabilities identical: desktop
+processes can run a gateway or experiments; the static website cannot.
 
 ## Personal-mode principle and formulas
 
@@ -172,6 +244,209 @@ prove that a downstream model will produce the same answer. Human review and
 output evaluation remain necessary. No additional LLM request is made by the
 ordinary browser preview.
 
+## Strategy contracts and rejection boundaries
+
+### 1. Exact single-record selection
+
+`record_selector.py` recognizes specific English and Chinese `id -> code` lookup
+instructions. The root JSON object must contain only `records`; IDs must be
+unique strings; exactly one row must match; the selected `code` must be a string.
+The prompt must match the supported instruction and single JSON-fence structure.
+
+The selector keeps the matching record and compacts that JSON. It does not
+generalize to arbitrary database queries. Duplicate IDs, multiple targets,
+unrecognized wording, comparisons, aggregation or extra instructions prevent
+this strategy from being selected. Another safe fallback may still apply.
+
+Removed records are genuinely absent from the candidate. Their recoverability
+from an in-memory edit record does not make the candidate lossless by itself.
+
+### 2. Bounded Python dependency selection
+
+`code_context_optimizer.py` parses a single fenced Python module with `ast`;
+it does not execute the submitted code. It can retain a clearly targeted
+function and statically named dependencies, or a supported print expression
+and its dependencies, while removing unrelated definitions.
+
+The accepted subset is deliberately small: undecorated functions with restricted
+expressions, local assignments and conditionals, optionally followed by one
+top-level print. Imports, classes, defaults, annotations, attribute access,
+dynamic calls, loops and other unsupported structures are rejected by this
+selector. The parser limits analysis to 4,000 AST nodes and the engine's text bound.
+This is not a general repository slicer or a proof of arbitrary Python purity.
+
+### 3. Explicit reference selection and exact duplicate removal
+
+`context_optimizer.py` has two bounded families:
+
+- **Reference selection:** the question clearly identifies one labeled source,
+  markers have both opening and closing boundaries, and the selected body has
+  query-word support. Supported marker forms include
+  `<reference name="Label">...</reference>`, `[Reference: Label]...[/Reference]`,
+  and `BEGIN REFERENCE: Label...END REFERENCE`.
+- **Duplicate removal:** remove exact repeated prose paragraphs or sentences
+  in supported positions, retaining the first copy. Similar-but-not-identical
+  passages are not assumed interchangeable.
+
+Cross-reference/global-policy cues, multiple targets, comparison/counting tasks,
+protected quotations and code can make these transformations inapplicable.
+Repetition may encode emphasis or discourse structure even when text is identical,
+so exact matching does not eliminate the need for review.
+
+### 4. Structural JSON compaction
+
+`prompt_compressor.py` delegates to `desktop/structural_compactor.py`. This is
+not a neural compressor: it removes permitted whitespace from explicit JSON
+fences while preserving supported lexical content. Instructions requiring
+original formatting or other protected exact-text behavior can block the edit.
+It is a fallback, not a promise that every JSON-containing prompt will shrink.
+
+### 5. Retention guard: a scoped invariant, not an oracle
+
+For declared deletion intervals `D`, the reference/deduplication guard verifies:
+
+```text
+candidate = concatenate(original segments outside D)
+restore(candidate, original edit patches) = original
+protected spans do not intersect D
+```
+
+It also checks deletion bounds, supported deletion kinds and exact retained
+counterparts for duplicates. It permits at most 128 declared deletion edits
+in this context path. The Python-code path has its own guard and dependency checks.
+Record selection instead validates its narrow JSON/query contract and restoration;
+not every strategy runs the same guard.
+
+Number, negation, entity-token and constraint checks compare **retained material**
+against the candidate. Deleted sources can contain numbers or entities that no
+longer appear. `global_inventory_unchanged` is distinct from scoped retention.
+Entity checks use lexical patterns, including capitalized tokens and CJK runs,
+not a trained named-entity recognizer. These checks do not independently establish
+that every deletion is semantically irrelevant.
+
+### Dispatch and fallback semantics
+
+```text
+capture original snapshot
+try exact record selection
+if inapplicable: try bounded code selection
+if inapplicable: try bounded document/context selection
+if still inapplicable: try structural compaction / unchanged original
+validate applicable guards, baseline accounting and restoration
+seal proposal; await explicit confirmation
+```
+
+This is an ordered dispatcher, not a search that scores all transformations
+and picks a global optimum. A shorter output must also satisfy its strategy's
+eligibility rules. Unsupported scope normally falls back to the original or a
+more limited transformation; malformed input, invalid counters or integrity
+failures can also raise an error. No candidate should be copied after such an error.
+
+## Worked examples
+
+### Example A: measured local JSON compaction
+
+Input used in a local source-engine check on September 18, 2026:
+
+````text
+Read this data and return amount.
+```json
+{
+    "amount": 123,
+    "active": false,
+    "description": "Example record"
+}
+```
+````
+
+Actual candidate:
+
+````text
+Read this data and return amount.
+```json
+{"amount":123,"active":false,"description":"Example record"}
+```
+````
+
+| Observation | Measured value |
+| --- | --- |
+| Strategy | `structural-json-v2` |
+| Local `cl100k_base` tokens before / after | 34 / 25 |
+| Input reduction | `1 - 25/34 = 26.47%` |
+| Edit restoration check | Passed |
+| Target-model answer quality tested in this check | No |
+| Subscription savings tested in this check | No |
+
+The browser sample uses this English text when English is selected. Changing
+whitespace, language or the tokenizer can change the counts. The task still
+requires the downstream assistant to answer; CacheScope itself did not call one.
+
+### Example B: a protected-format task
+
+Prefix that input with `Keep the original format.`. The browser integration test
+checks that the result remains unchanged for this protected case. Zero reduction
+is the appropriate outcome when a supported edit would violate the request.
+
+### Example C: why deleting irrelevant-looking context can be wrong
+
+A question about the price of one item might look like a single-record lookup.
+But an additional instruction such as "apply the discount in the shared policy"
+makes that other material relevant. A selector that only follows the item name
+could silently lose the discount rule. This motivates explicit scope restrictions,
+cross-reference rejection and an original-preserving fallback. It remains an
+illustration of risk, not a claim that every such dependency is detected.
+
+## Preview state and data contracts
+
+### UI lifecycle
+
+```text
+not initialized -> consent -> loading -> ready
+ready + input -> checking -> unchanged original OR proposed candidate
+proposed candidate + review -> confirm -> copy
+edited input / expired plan -> invalidate -> preview again
+failure -> show error; do not treat the operation as successful
+```
+
+The default policy permits at most 50,000 characters and makes confirmation
+valid for 900 seconds. Browser text-field and Python string length conventions
+can differ for some Unicode characters; 50,000 is not a token budget.
+While a request is busy, action buttons are disabled. Request IDs and captured
+input snapshots are checked so a response for an older draft is not shown as a
+valid result for a new draft.
+
+### Internal plan versus exported report
+
+| Data | Location and purpose | In the downloaded browser report? |
+| --- | --- | --- |
+| Original and candidate text | UI and worker memory; review and confirmation | No |
+| Edit patches and original hashes | Full Python plan; restoration and integrity | No |
+| Plan ID, creation/expiry times and approval seal | Full Python plan; confirmation validation | No |
+| `strategy`, `changed`, `reason` | Explain the selected path | Yes |
+| `local_before`, `local_after`, `local_reduction` | Local tokenizer measurements | Yes |
+| `requires_review` | Candidate review flag | Yes |
+| `platform_declared` | User-selected label, not a verified account/model | Yes |
+| `measurement` | `local_cl100k_estimate` | Yes |
+| `subscription_savings_verified` | Explicitly false for browser preview | Yes |
+
+The engine seals relevant plan fields using an ephemeral per-instance HMAC key.
+Confirmation verifies the seal, exact original text, approval and expiration.
+This guards against stale or modified proposals inside the workflow. It is
+not remote attestation, a proof of model quality or protection against compromised
+browser scripts/extensions that can access the runtime itself.
+
+The bridge returns a subset of fields; the UI strips the candidate before export.
+The downloaded `cachescope-result.json` is therefore a local preview report, not
+an A/B experiment ledger or a detailed guard audit. Hashes and patches in the
+internal engine must not be mistaken for data exported by this web interface.
+
+Export is available before approval and records neither successful confirmation
+nor downstream use. It cannot show whether the candidate was sent or whether an
+answer was correct. An unchanged original can be copied without ticking a review
+checkbox. Candidate text is read-only; to make changes, edit the input and preview
+again. Code and document selection both use the UI strategy label `daily-context-v1`;
+the `reason` field provides a more specific explanation.
+
 ## Team API principle: caching and keepalive
 
 This section explains the broader desktop project; these controls do not run
@@ -211,6 +486,42 @@ simulated strategies using configured intervals and dated provider assumptions.
 Unknown retention is not verified evidence. Active keepalive is opt-in, bounded,
 and must be evaluated against doing nothing. A cache hit alone proves no net saving.
 
+### Break-even condition and time horizon
+
+For the simplified single-reuse model, if `Δh = h_strategy - h_baseline > 0`
+and `D_reuse > 0`, the strategy has positive expected net benefit only if:
+
+```text
+p_reuse > K_extra / (Δh × D_reuse)
+```
+
+If that threshold exceeds 1, the assumed strategy cannot pay off within this
+model. If `Δh <= 0`, spending on keepalive has no modeled cache-hit advantage.
+If `K_extra` itself depends on when the session ends, compare the full expected
+cost rather than treating it as a known constant.
+
+For multiple possible future requests over horizon `H`:
+
+```text
+E[net benefit over H] = sum_j(p_j × Δh_j × D_j) - E[K_extra over H]
+```
+
+Here `p_j` is the probability of reuse opportunity `j`; use a conditional or
+joint model when dependencies matter. This decomposition is explanatory, not
+the browser's algorithm and not a trained predictor already serving users.
+
+Illustrative, non-provider-specific numbers: let `p_reuse = 0.6`, `Δh = 0.7`,
+`D_reuse = $0.02` and `K_extra = $0.005`. The expected net benefit is
+`0.6 × 0.7 × 0.02 - 0.005 = $0.0034`. At `p_reuse = 0.2`, it becomes
+`-$0.0022`. The same keepalive policy can help one workload and hurt another.
+These are arithmetic examples, not measured customer savings or current API prices.
+
+TTL experiments should observe provider-reported cache usage after controlled
+idle gaps. A hit at one gap and miss at another bounds behavior in those trials;
+it does not prove a universal exact TTL. Repeated probes can refresh a cache and
+confound the measurement. Independent trials, replication, stable prefixes and
+clear separation of natural retention from keepalive effects are needed.
+
 ## Evaluation: how an improvement should be demonstrated
 
 Use an original-input arm A and an optimized-input arm B on the same task,
@@ -244,6 +555,61 @@ resolution and settlement time. The browser does not collect these measurements.
 There is no valid universal conversion from local token reduction to subscription
 quota reduction.
 
+### A fuller research protocol, not a result claimed by the demo
+
+Before running an evaluation, define the task population, quality rubric,
+allowed quality-loss tolerance `ε`, target model/settings and resource metric.
+Keep development examples separate from the final evaluation set.
+
+| Stage | What to control or record | Why it matters |
+| --- | --- | --- |
+| Sampling | Language, task type, context size, protected content | Avoid testing only easy shrinking cases |
+| Assignment | Same tasks for A and B; randomized/counterbalanced order | Reduce task and order confounds |
+| Execution | Target model, tool access, output limits, retries | Avoid changing the task while claiming optimization |
+| Quality | Independent rubric; numbers, constraints and completeness | Shorter wrong answers are not free improvements |
+| Accounting | Optimizer overhead, every attempt, failures, missing usage | Prevent optimistic success-only reporting |
+| Analysis | Coverage, paired estimates, uncertainty, task slices | Expose cases where the method does not apply |
+| Decision | Savings together with the agreed quality constraint | Distinguish useful savings from unacceptable loss |
+
+At dataset level, a weighted aggregate is:
+
+```text
+aggregate_resource_reduction = 1 - sum_i(U_B,i) / sum_i(U_A,i)
+quality_loss = Q_A - Q_B
+candidate acceptance criterion: resource_reduction > 0 and quality_loss <= ε
+```
+
+The ratio of totals is not the average of task-level percentages: it gives more
+weight to tasks that consume more resources. Report both when useful, with the
+aggregation method explicit. Separate languages/task families; a large gain
+on narrow lookup tasks can hide regressions on ordinary instructions.
+
+Two additional diagnostics are useful:
+
+```text
+transformation_coverage = tasks with changed candidates / all submitted tasks
+measurement_coverage = pairs with valid comparable measurements / expected pairs
+```
+
+Retain unchanged tasks in workload-level results, and report missing measurements
+separately. Excluding failed or unavailable pairs cannot justify a general saving
+claim. Paired confidence intervals or a paired bootstrap can characterize sample
+uncertainty; these are proposed analysis methods, not a feature of the current
+browser report. Repeated trials must account for task-level dependence.
+
+### Why shorter input can cost more overall
+
+Suppose A consumes 1,000 input tokens and 200 output tokens once: 1,200 tokens.
+Suppose B consumes 700 input tokens and 200 output tokens, but requires one
+additional 700-input/200-output attempt: 1,800 tokens. Input length fell by 30%,
+while total token usage increased by 50%. Actual APIs may charge these token
+categories differently, so cost must be evaluated separately as well.
+
+If quota displays are rounded, a zero displayed change means "below the observable
+resolution or unsettled", not "free". Resetting windows and unrelated account
+activity invalidate simple differences. No finite experiment promises a universal
+per-task quota forecast across closed consumer platforms.
+
 ## Evidence and limitations
 
 | Question | Current answer |
@@ -259,6 +625,50 @@ quota reduction.
 Passing software tests establishes tested behavior, not real-world savings.
 Narrow record-lookup results cannot be generalized to all tasks. No fixed
 30–40% savings target is advertised as an achieved result.
+
+## Current limitations / 当前局限性
+
+These are known boundaries of the current version, not small-print exceptions
+to a promised saving. The project should be used for exploratory testing, with
+the original input retained and results reviewed.
+
+| Limitation | Practical consequence | Development still needed |
+| --- | --- | --- |
+| Narrow deterministic coverage | Many ordinary prompts will remain unchanged; exact record selection needs specific templates | Broader bilingual task handling with independent quality evaluation |
+| No universal semantic judge | A structurally valid deletion may still remove an important dependency or emphasis | Task-aware constraint checks, adversarial evaluation and clearer uncertainty |
+| Local tokenizer only | `cl100k_base` counts need not match a selected provider/model's actual usage | Versioned model/tokenizer mapping and separate observed-versus-estimated metrics |
+| Input reduction is not total savings | Longer outputs, mistakes or retries can offset a shorter prompt | Complete task-level accounting, including all attempts and optimization overhead |
+| Subscription savings unverified | The browser cannot say how much ChatGPT/Claude/Codex quota a task saved | Authorized, sufficiently precise platform observations where available; honest unavailable status elsewhere |
+| Preview export is incomplete evidence | Reports do not prove approval, copying, model execution, quality or savings | Opt-in experiment records with explicit lifecycle and measurement provenance |
+| No automated send or app integration | Users must copy/paste and submit in their own assistant | Usability improvements or permitted integrations with explicit consent |
+| Team functionality is not hosted here | The Team API tab does not connect applications or perform keepalive | Separate accessible desktop distribution and provider-specific integration validation |
+| No universal TTL or keepalive policy | A policy may add cost, and retention observations may not generalize | Controlled repeated trials, workload-specific comparisons and safe stop conditions |
+| Browser memory still holds text | Local processing is not immediate erasure or a complete security guarantee | Lifecycle cleanup, threat modeling and independent security review |
+| Runtime and platform compatibility | First load downloads WASM assets; browsers, permissions and device policies may block features | Broader browser/device tests, accessibility tests and better failure recovery |
+| Unsigned desktop builds | Windows application control may block installation or launch | Appropriate signing and compatibility checks, without disabling protections |
+| No production operations commitment | No SLA, guaranteed support, enterprise compliance claim or complete recovery process | Release discipline and operational/security work before any production offering |
+
+The model-development limitation is equally important: the current browser
+does **not** use a fine-tuned general semantic compressor, learned policy,
+reinforcement learning controller or reuse-prediction service. Existing research
+or training work is not automatically part of the deployed personal engine.
+
+### Appropriate and inappropriate use today
+
+Use it to inspect supported local transformations, try non-sensitive bilingual
+examples, compare candidates and help find bugs. Keep the original and review
+the resulting task in your normal assistant.
+
+Do not rely on it as an automatic rewriting layer for high-stakes instructions,
+a billing auditor, a subscription quota meter, a legal/compliance guarantee or
+a production cost-reduction contract. Do not treat a green check or smaller token
+number as independent proof of answer quality.
+
+中文总结：目前能做的是本地预览和部分结构化精简，不是“任意任务都能省额度”。
+我们还没有证明通用订阅额度节省，也不能保证删减后的模型答案始终等价。
+公开网页不读取账户用量，不自动发送任务，不运行团队 Gateway。Windows 桌面包
+仍存在未签名兼容限制。这些边界会保留在说明中，不会用模拟、局部成功案例或
+测试通过数量代替真实节省证据。
 
 ## Public file map
 
@@ -279,6 +689,63 @@ context and code selection and retention guards; `desktop/structural_compactor.p
 provides structural edits and restoration. This is a generated browser distribution,
 not the complete desktop development checkout.
 
+### Run the public distribution locally
+
+No build step is needed to serve the public artifact. For developers who already
+have Git and Python installed, an optional local workflow is:
+
+```bat
+git clone https://github.com/thisisyk/cachescope-web.git
+cd cachescope-web
+py -m http.server 8000 --bind 127.0.0.1
+```
+
+Open `http://127.0.0.1:8000/`, keep that terminal running, and stop it with Ctrl+C.
+On systems where `py` is unavailable, use the installed `python` or `python3`
+command. Regular users can use the hosted demo without these developer tools.
+Do not open `index.html` through a `file://` URL: modules and runtime loading
+need HTTP(S). The local server should remain bound to the loopback interface.
+
+### Source build and checks for authorized maintainers
+
+The full source checkout contains `web/build.mjs`, `bridge.mjs`, `worker.mjs`,
+`test.mjs` and the unbundled Python modules. From its `web` directory:
+
+```text
+npm ci
+npm run build
+npm test
+```
+
+The CI build uses Node.js 22. The builder bundles the worker, copies the runtime
+and third-party notices, and exports an allowlisted set of Python modules to
+`dist/python-sources.json`. These commands do not run in the public distribution
+repository, which contains generated assets rather than the complete build tree.
+
+The existing Node test loads the Python/WASM runtime and shared engine. It covers
+English/Chinese JSON reduction, approval and non-approval, changed-original
+rejection, protected-format retention, an unchanged short prompt, oversized
+input rejection and the false subscription-savings flag. It is one integration
+test with multiple assertions, not a broad real-world benchmark. Browser clipboard
+permissions, UI rendering and platform quota are outside that test's coverage.
+
+Publication currently involves a separately reviewed browser artifact. Updating
+private source alone does not prove the public site contains the same revision.
+Compare artifact contents and deployment state before describing a fix as live.
+
+### Troubleshooting
+
+| Symptom | Meaning and next action |
+| --- | --- |
+| Start button is disabled | Read the notice and tick its agreement box |
+| Preview is disabled | Wait for engine readiness and enter nonblank text; a request may be busy |
+| Loading fails | Check network/resource blocking, then refresh; do not disable device protections |
+| Result remains unchanged | No supported reduction was accepted; keep the original |
+| Copy is disabled | Review a changed candidate, or generate a new valid preview |
+| Preview expired or input changed | Run Check & preview again before approving |
+| Clipboard write fails | Use the displayed Ctrl+C fallback on the selected candidate |
+| Desktop link returns 404 or access denied | Desktop downloads are private, not a public web capability |
+
 ## Privacy and safe use
 
 Draft processing happens in the browser worker. The application has no draft
@@ -288,6 +755,19 @@ local processing does not mean the initial page load is offline.
 Review candidates before pasting them elsewhere, especially for sensitive or
 high-stakes tasks. Do not submit secrets in public issue reports.
 
+Local processing is a data-flow design, not a complete security certification.
+The hosting account, browser, extensions and published dependencies remain
+part of the trust boundary. A compromised environment could access visible
+text. The site's Content Security Policy restricts resources to its origin and
+allows the WebAssembly execution needed by the engine; this does not replace
+dependency review. Browser caching of application files is not a guarantee of
+offline operation. Reloading also is not a certified secure-erasure procedure.
+
+In particular, clearing or editing the UI invalidates its preview but does not
+immediately erase the worker's latest Python plan. That plan can contain the
+original and restoration patches until replaced or the worker is destroyed.
+There is no secure-memory-erasure guarantee for browser or operating-system copies.
+
 ## Development direction
 
 The next milestones are broader bilingual task coverage, stronger constraint
@@ -295,6 +775,114 @@ checks, independent quality evaluation, full-cost A/B accounting and better
 onboarding. Reliable quota observation remains a separate, platform-dependent
 problem, not something prompt compression alone solves. Research contributions
 and honest negative results are as welcome as successful examples.
+
+### Roadmap with acceptance gates
+
+| Workstream | Next deliverable | Evidence needed before calling it complete |
+| --- | --- | --- |
+| Broader daily tasks | More bilingual supported scopes | Unseen tasks, failure analysis, measured quality and coverage |
+| Retention checks | Better detection of lost constraints | Adversarial cases and explicit false-negative analysis |
+| Evaluation | Reproducible full-task A/B reports | All attempts, overhead, missingness and uncertainty recorded |
+| UI and onboarding | Clearer strategy explanations | Usability tests and accessible error/review flows |
+| Provider strategies | Better cache assumptions and controls | Provider-specific controlled trials and net cost accounting |
+| Learned compression | Optional model-backed candidates | Licensed data, clean splits, quality/cost comparison against rules |
+| Reuse prediction | Workload-aware decision research | Calibration and out-of-sample net savings beyond fixed policies |
+| Desktop distribution | Trustworthy installation path | Appropriate signing, compatibility and release checks |
+
+These are development priorities, not delivery dates or promised product features.
+A learned compressor would add model loading, inference latency and potentially
+extra paid calls; it should beat the rule-based baseline after those costs are
+included. More training data or epochs alone do not demonstrate an improvement.
+
+### Implementation priorities / 还需要开发的地方
+
+This is a proposed order, not a statement that these items are complete or funded.
+
+**P0 — make the evidence and safety boundary clearer.**
+
+- Distinguish preview, approval and actual downstream execution in any future reports.
+- Add opt-in full-task records with model/settings, attempt counts, usage source,
+  missing measurements and a separately graded outcome. Avoid retaining raw
+  prompts by default, and let users inspect what will be stored.
+- Add adversarial tests for hidden dependencies, lost negations, shared rules,
+  numerical units and formatting requirements, including bilingual examples.
+- Improve memory lifecycle handling and warnings; do not claim secure erasure
+  without establishing what the platform can actually guarantee.
+- Acceptance gate: no simulated, estimated, unavailable or preview-only metric
+  is presented as a measured subscription saving or verified model outcome.
+
+**P1 — improve everyday usefulness without obscuring tradeoffs.**
+
+- Broaden supported task structures beyond narrow lookup templates and restricted
+  Python modules; explain why a candidate was selected or rejected.
+- Add per-model tokenizer configuration only with documented/versioned mappings;
+  continue labeling approximate counts rather than implying live account access.
+- Expand browser, mobile, clipboard and accessibility checks; improve initial
+  loading, timeout and retry guidance without bypassing device protections.
+- Acceptance gate: performance is reported on unseen task families in both
+  languages, with transformation coverage, quality loss and total resource usage.
+
+**P2 — evaluate learned and provider-specific strategies.**
+
+- Compare any trained compressor with unchanged-input and rule-based baselines,
+  using permitted data, isolated test sets and all inference costs included.
+- Evaluate cache strategies against no intervention and fixed policies; measure
+  net savings rather than cache hits alone.
+- Study reuse prediction only when appropriate workload data is available with
+  consent. Public training data by itself does not establish provider TTL behavior.
+- Acceptance gate: the added complexity produces reproducible out-of-sample
+  benefit at a declared quality tolerance. Otherwise retain the simpler baseline.
+
+**Distribution and collaboration — ongoing, separate from algorithm research.**
+
+Improve source/artifact traceability, release checks, desktop signing and a clear
+contribution workflow. Keep the public browser distribution distinct from the
+private full source, and document what contributors can actually reproduce.
+None of these packaging changes by themselves prove a savings claim.
+
+中文开发顺序：先把安全边界和真实测量补完整，再扩展日常中英文任务与兼容性，
+最后用严格对照实验判断训练模型、缓存预测等复杂方案是否值得加入。每一步都需要
+验收依据，而不是只增加功能按钮或宣称一个节省百分比。
+
+### How to contribute a useful report
+
+Open a public Issue with the following, omitting private data:
+
+```text
+Task type and language:
+Browser / operating system:
+Date and site revision, if known:
+Minimal synthetic input that reproduces the behavior:
+Expected behavior and important constraints:
+Observed candidate or error (sanitized):
+Strategy and local token counts:
+Did a downstream model run? Which settings, if relevant?
+What was actually measured versus still unknown?
+```
+
+Research reviews, reproducible negative examples, clearer English/Chinese
+wording and code audits are welcome. The public repository contains generated
+assets: for substantial engine/build changes, discuss the source workflow first
+rather than hand-editing a minified worker. Please do not disclose vulnerabilities
+with credentials or exploitable private data in a public report. A formal security
+disclosure process and commercial support program have not been established.
+
+### 中文技术导读
+
+本项目分成两个思路：个人模式减少任务里不必要的输入；团队模式研究重复前缀
+能否复用，以及 keepalive 的额外费用是否值得。目前公开网页只运行个人模式。
+核心不是一个已经训练好的通用压缩大模型，而是规则选择器、结构检查、tokenizer
+和人工确认流程。它不会自动读取你的订阅额度，也不会直接操作其他软件的输入框。
+
+个人模式的公式是 `1 - 候选 token / 原文 token`。这只是输入层面的变化；
+真正评价任务效果，还要统计输出、错误重试、优化开销和质量差异。团队模式的判断
+则是“未来复用概率 × 缓存命中改善 × 单次可省费用 − 保活等额外费用”。两类指标
+不能混为一谈，更不能把本地 token 减少直接换算成订阅额度节省。
+
+程序先尝试适用范围很窄的记录选择，再尝试受限的 Python 依赖选择、文档选择
+或去重，最后尝试 JSON 空白精简。不适用时可以保留原文。检查保证的是声明范围内
+的结构一致性，不是“所有任务都完全无损”。未来重点是扩大适用范围、增强质量检查、
+做好独立评测，并欢迎其他开发者帮助验证失败案例，而不是把实验结果包装成商业保证。
 
 ## Runtime and licenses
 
