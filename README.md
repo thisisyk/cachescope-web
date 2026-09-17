@@ -9,6 +9,52 @@ finished service. I am sharing it to learn from real testing and community feedb
 [Try the web demo](https://thisisyk.github.io/cachescope-web/)
 | [Report an issue or suggest an improvement](https://github.com/thisisyk/cachescope-web/issues)
 
+## How to use it / 用户怎么使用
+
+### Start here: no installation or API key
+
+1. Open [CacheScope Web](https://thisisyk.github.io/cachescope-web/) and choose English or 中文 in the top-right corner.
+2. Read the experimental-use notice, tick the agreement box and click **Start local engine / 启动本地引擎**. The first load downloads the runtime and tokenizer; wait for initialization before previewing.
+3. Stay in **Personal / 个人精简**. Choose your intended platform, then paste the task and context you were going to send into **Your task / 你的任务**. You can click **Try an example / 试用示例** first. The platform choice is informational, not an account connection.
+4. Click **Check & preview / 检查并预览**. Compare the original with **Candidate / 候选内容** and inspect the local token counts under **This result / 本次结果**.
+5. Check that numbers, names, negations, formatting requirements and all task instructions remain correct. If satisfied, tick **I reviewed the important facts and requirements / 我已核对重要事实与要求**, then click **Confirm & copy / 确认并复制**.
+6. Paste the copied text into ChatGPT, Claude, Codex or your preferred assistant and send it yourself. CacheScope does not send the message or edit another app's input box.
+7. Optionally click **Download result (no prompt text) / 下载结果（不含原文）** to keep the local measurement report. This is not a report of measured subscription savings.
+
+中文快速流程：打开网页 → 选择语言 → 阅读并同意说明 → 启动本地引擎 →
+粘贴任务（或试用示例）→ 检查并预览 → 核对候选 → 勾选已核对 → 确认并复制 →
+粘贴到你原来使用的聊天工具，由你自己发送。无需安装 Python，也不需要在网页填写 API Key。
+
+### How to interpret the result / 怎么看结果
+
+- **Original tokens / 原文 Token** and **Candidate tokens / 候选 Token** are local `cl100k_base` counts. They are not live readings from your selected platform.
+- **Local input reduction / 本地输入减少** measures the difference between those counts, not API billing or remaining subscription quota.
+- If the text is unchanged or reduction is 0%, no applicable shorter candidate was found. Use the original; a nonzero result is not forced.
+- If important information is missing, do not approve the candidate. Use the original and report an anonymized example if you want to help improve the project.
+- If you edit the input or approval expires, click **Check & preview** again. If clipboard permission is denied, follow the page's instruction to copy the selected text with Ctrl+C.
+
+中文提醒：减少的是当前输入的本地估算 token，不等于平台总消耗或订阅额度同比减少。
+候选不合适就用原文；没有缩短不代表必须继续删减。请先用非敏感示例体验，不要为了
+获得更高比例而删除任务所必需的信息。
+
+### Team API users / 团队 API 用户
+
+The public webpage does not run a gateway or keepalive. Its Team API tab is an
+explanation, not a one-click connection to your application. The desktop build
+and full source are currently in a private repository; its download link requires
+repository access. If you cannot access it, use a public Issue to request testing
+access—do not send credentials.
+
+For users with desktop access: open the app, read the agreement, select Team API,
+configure your provider locally, start the gateway, then configure a supported
+application to use the displayed local API endpoint. Run a small request and
+inspect reported usage before considering opt-in keepalive. Provider calls can
+cost money, and unsigned Windows builds may be blocked by device policy.
+
+团队版目前不是公开网页里可直接运行的功能。需要桌面版本及相应访问权限，
+并在本地配置供应商连接和应用入口。初次使用先观察，不要把启用 keepalive
+当作必然省钱；不要在网页或公开 Issue 中填写密钥。
+
 ## Help wanted and next steps
 
 - Test more everyday English and Chinese tasks, including failure cases.
