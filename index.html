@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'">
+  <title>CacheScope · Browser</title><link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<main>
+  <header><a class="brand" href="./">CacheScope <span>Web</span></a>
+    <select id="language" aria-label="Language"><option value="zh">中文</option><option value="en">English</option></select></header>
+  <h1 data-zh="更少上下文，先看结果。" data-en="Less context. Review the result."></h1>
+  <p class="muted" data-zh="与桌面版共用优化引擎。文本在浏览器本地处理。" data-en="The desktop optimization engine, running locally in your browser."></p>
+  <nav><button id="personalTab" class="selected" data-zh="个人精简" data-en="Personal"></button><button id="teamTab" data-zh="团队 API" data-en="Team API"></button></nav>
+  <section id="consent" class="card">
+    <h2 data-zh="开始前" data-en="Before you start"></h2>
+    <p data-zh="这是 vibe coding 开发的实验版本。首次加载会下载 Python 运行时和词表；输入不会发送到模型或保存到服务器。浏览器缓存可能保留程序文件。" data-en="An experimental, vibe-coded release. First use downloads a Python runtime and tokenizer. Inputs are not sent to a model or saved on a server. Your browser may cache application files."></p>
+    <p data-zh="请核对候选内容。检查不能保证语义完全一致，本地 token 减少也不代表订阅额度节省。网页无法读取其他 App 的额度或替它们转发请求。" data-en="Review proposed edits. Checks do not guarantee semantic equivalence, and local token reductions do not establish subscription savings. This page cannot read other apps' quotas or proxy their requests."></p>
+    <label><input type="checkbox" id="agree"><span data-zh="我已阅读并同意以上说明" data-en="I have read and agree to these terms"></span></label>
+    <button id="initialize" disabled data-zh="启动本地引擎" data-en="Start local engine"></button>
+  </section>
+  <section id="personal">
+    <div class="toolbar"><label><span data-zh="使用平台" data-en="Your platform"></span>
+      <select id="platform"><option>ChatGPT</option><option>Claude</option><option>Codex</option><option>Other</option></select></label>
+      <button id="example" data-zh="试用示例" data-en="Try an example"></button></div>
+    <div class="columns">
+      <section class="card"><h2 data-zh="你的任务" data-en="Your task"></h2><textarea id="input" maxlength="50000" aria-label="Your task"></textarea>
+        <button id="preview" disabled data-zh="检查并预览" data-en="Check & preview"></button></section>
+      <section class="card"><h2 data-zh="候选内容" data-en="Candidate"></h2><textarea id="candidate" readonly aria-label="Candidate"></textarea>
+        <label><input type="checkbox" id="review" disabled><span data-zh="我已核对重要事实与要求" data-en="I reviewed the important facts and requirements"></span></label>
+        <button id="copy" disabled data-zh="确认并复制" data-en="Confirm & copy"></button></section>
+    </div>
+    <section class="card" id="results"><h2 data-zh="本次结果" data-en="This result"></h2>
+      <div class="metrics"><div><span data-zh="原文 Token" data-en="Original tokens"></span><strong id="before">—</strong></div>
+      <div><span data-zh="候选 Token" data-en="Candidate tokens"></span><strong id="after">—</strong></div>
+      <div><span data-zh="本地输入减少" data-en="Local input reduction"></span><strong id="reduction">—</strong></div></div>
+      <p id="strategy"></p><p class="muted" data-zh="cl100k_base 本地估算，与所选平台实际计量不同。平台选项不改变计数规则。订阅节省：未验证。" data-en="Local cl100k_base estimates, not your platform's actual accounting. Platform selection does not change tokenization. Subscription savings: unverified."></p>
+      <button id="export" disabled data-zh="下载结果（不含原文）" data-en="Download result (no prompt text)"></button>
+    </section>
+  </section>
+  <section id="team" class="card" hidden>
+    <h2 data-zh="团队请求需要桌面 Gateway" data-en="API workflows need the desktop gateway"></h2>
+    <p data-zh="网页负责个人内容精简；要观察 API 用量、接入应用或运行 Keepalive，请下载桌面版并选择团队 API。密钥不需要填写到此网页。" data-en="The browser handles personal context reduction. To observe API usage, connect an application or run keepalive, download the desktop app and choose Team API. Do not enter API keys on this page."></p>
+    <a class="button" href="https://github.com/thisisyk/cachescope/releases/latest" data-zh="下载桌面版" data-en="Get the desktop app"></a>
+  </section>
+  <p id="status" role="status" aria-live="polite"></p>
+  <footer><a href="https://github.com/thisisyk/cachescope">GitHub</a><span>Built with vibe coding · Experimental</span></footer>
+</main><script src="./app.js" type="module"></script>
+</body></html>
