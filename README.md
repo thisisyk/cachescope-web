@@ -1,6 +1,8 @@
 # CacheScope Web
 
-## Project introduction / 项目介绍
+[English](README.md) | [简体中文](README.zh-CN.md)
+
+## Project introduction
 
 ### English introduction
 
@@ -13,20 +15,21 @@ finished service. I am sharing it to learn from real testing and community feedb
 [Try the web demo](https://thisisyk.github.io/cachescope-web/)
 | [Report an issue or suggest an improvement](https://github.com/thisisyk/cachescope-web/issues)
 
-### 中文介绍
+### Project introduction (restated)
 
-**开发中——这是个人学习与研究项目，不是商业产品。**
+**Work in progress — a personal learning and research project, not a commercial product.**
 
-我正在开发 CacheScope，探索如何在保留重要任务要求的前提下，减少不必要的
-大语言模型输入。这是一个实验性演示，而不是已经完成的服务。我分享它，是希望
-通过真实测试和社区反馈继续学习、改进。
+I am developing CacheScope to explore reducing unnecessary large-language-model
+input while preserving important task requirements. This is an experimental demo,
+not a finished service. I am sharing it to keep learning and improving through
+real testing and community feedback.
 
-[试用网页版](https://thisisyk.github.io/cachescope-web/)
-| [反馈问题或提出改进建议](https://github.com/thisisyk/cachescope-web/issues)
+[Try the web demo](https://thisisyk.github.io/cachescope-web/)
+| [Report an issue or suggest an improvement](https://github.com/thisisyk/cachescope-web/issues)
 
-## Technical core — 原理、公式与代码结构
+## Technical core: principles, formulas and code structure
 
-[English version](#technical-explanation-in-english) | [完整中文版](#中文原理与公式)
+[Technical explanation](#technical-explanation-in-english) | [Principles and formulas (restated)](#principles-and-formulas-restated)
 
 ### Technical explanation in English
 
@@ -113,83 +116,99 @@ quality. Both arms must use the same consumption metric and quality rubric.
 Local token reduction, total task usage, API cost and subscription quota are
 separate metrics. No universal token-to-subscription conversion is implemented.
 
-### 中文原理与公式
+### Principles and formulas (restated)
 
-#### 核心原理
+#### Core principle
 
-**个人模式改变输入内容；团队 API 模式研究计算复用。**
-这是两种不同的机制，必须分别测量，不能混为同一种节省。
+**Personal mode changes the input; Team API mode studies reuse of computation.**
+These are different mechanisms. They must be measured separately, not treated
+as the same kind of saving.
 
-个人模式：在规则支持的任务范围内，保留任务要求和所需材料，删去规则识别为
-不必要的内容或 JSON 空白，从而减少交给模型的输入。当前实现是确定性规则，
-不是一个已经训练好、能够理解任意任务的通用压缩模型。没有适用的转换时保留
-原文；产生候选后仍需用户审核。
+Personal mode preserves task requirements and necessary material within the
+supported task scopes, removing content or JSON whitespace that its rules
+identify as unnecessary to reduce the input sent to the model. The current
+implementation uses deterministic rules, not a trained general-purpose
+compression model that understands arbitrary tasks. When no transformation
+applies, it retains the original; any candidate still requires user review.
 
-团队 API 模式：研究供应商缓存能否复用重复的稳定前缀，以及 keepalive 是否
-值得其额外成本。缓存命中可能减少重复计算和相应费用，但不代表发送的 token
-数量减少。这部分属于桌面项目，不在公开网页中执行。
+Team API mode investigates whether provider caches can reuse repeated stable
+prefixes and whether keepalive is worth its additional cost. A cache hit may
+reduce repeated computation and the associated charge, but does not mean fewer
+tokens are sent. This functionality belongs to the desktop project and does not
+run on the public website.
 
-#### 1. 本地输入减少
+#### 1. Local input reduction (restated)
 
-设 `x` 为原文，`x′` 为候选，`T` 为同一个本地 tokenizer 的计数函数。
-原文与候选必须采用相同的计数规则，且原文 token 数必须大于零：
+Let `x` be the original input, `x′` the candidate, and `T` the counting function
+of the same local tokenizer. Original and candidate must use the same counting
+rules, and the original token count must be greater than zero:
 
 $$
 \Delta T = T(x)-T(x'), \qquad
 r_{\mathrm{input}}=1-\frac{T(x')}{T(x)}
 $$
 
-`ΔT` 是本地输入减少的 token 数，`100 × r_input` 是页面显示的输入减少百分比。
-在本文记录的英文 JSON 示例中，`T(x)=34`、`T(x′)=25`，因此实测本地输入减少
-`9 tokens`，约为 `26.47%`。这不是订阅额度节省的测量结果。
+`ΔT` is the number of local input tokens removed; `100 × r_input` is the input
+reduction percentage displayed on the page. In the English JSON example
+documented here, `T(x)=34` and `T(x′)=25`, so the measured local input reduction
+is `9 tokens`, approximately `26.47%`. This is not a measurement of subscription
+quota savings.
 
-#### 2. 完整任务的优化目标
+#### 2. Complete-task optimization objective (restated)
 
-研究目标是减少完成任务的总消耗，同时把质量损失控制在事先声明的容许范围内：
+The research goal is to reduce total consumption when completing a task while
+keeping quality loss within a tolerance declared in advance:
 
 $$
 \min_s \mathbb{E}[U(s)] \quad
 \text{subject to}\quad Q_0-Q_s\leq\varepsilon
 $$
 
-其中，`s` 是策略；`U(s)` 是按同一种明确指标统计的完整消耗，包含优化器的
-模型调用和每一次任务尝试；`Q_0` 是基线质量分数，`Q_s` 是优化策略的质量分数，
-两者使用同一套独立定义的评分标准；`ε` 是允许的质量损失。
-这是研究目标，并不表示当前引擎已经求出了全局最优解。规则检查也不能替代
-对模型实际输出的质量评测。
+Here `s` is a strategy; `U(s)` is complete consumption measured using the same
+clearly defined metric, including optimizer model calls and every task attempt;
+`Q_0` is the baseline quality score, and `Q_s` the optimization strategy's quality
+score, both using the same independently defined rubric; `ε` is the permitted
+quality loss. This is a research objective, not a claim that the current engine
+has computed a global optimum. Rule checks cannot replace quality evaluation
+of the model's actual output.
 
-#### 3. 简化缓存经济模型
+#### 3. Simplified cache economics (restated)
 
-团队 API 模式的简化预期净收益公式为：
+For Team API mode, a simplified expected net-benefit formula is:
 
 $$
 G=p_{\mathrm{reuse}}(h_s-h_0)D-K
 $$
 
-`p_reuse` 是未来复用概率；`h_s-h_0` 是在发生复用的条件下，策略带来的缓存
-命中概率提升；`D` 是一次复用由 miss 变成 hit 时可避免的费用；`K` 包括额外的
-保活、写入和存储等成本。只有在假设成立且 `G>0` 时，这个简化模型才支持策略
-可能带来净节省；公式本身不是实测结果。
+`p_reuse` is the probability of future reuse; `h_s-h_0` is the strategy's
+improvement in cache-hit probability conditional on reuse; `D` is the cost
+avoided when one reuse changes from a miss to a hit; `K` includes additional
+keepalive, write, storage and other costs. Only when the assumptions hold and
+`G>0` does this simplified model support a potential net saving from the
+strategy; the formula itself is not a measured result.
 
-#### 4. 完整任务的实测对照
+#### 4. Measured comparison of complete tasks (restated)
 
-真实对照应比较两组的完整消耗，而不是只比较输入长度：
+A real comparison should measure complete consumption in both arms, not just
+compare input lengths:
 
 $$
 r_{\mathrm{task}}=1-\frac{U_B}{U_A}, \qquad
 \Delta Q=Q_B-Q_A
 $$
 
-`A` 是原始任务组，`B` 是优化任务组。消耗必须计入失败尝试和重试，基线必须
-可获得且为正。`ΔQ` 是优化组质量减去基线质量，负值表示质量下降。两组必须
-采用相同的消耗指标和质量评分标准。
-本地输入 token 减少、完整任务消耗、API 费用和订阅额度是不同指标。
-当前没有实现把 token 减少通用换算为订阅额度节省的公式。
+`A` is the original-task arm and `B` the optimized-task arm. Consumption must
+include failed attempts and retries, and the baseline must be available and
+positive. `ΔQ` is optimized-arm quality minus baseline quality; a negative value
+means lower quality. Both arms must use the same consumption metric and quality
+rubric. Local input token reduction, complete-task consumption, API cost and
+subscription quota are different metrics. No universal formula for converting
+token reduction into subscription quota savings is currently implemented.
 
-### Code structure / 代码如何实现这些逻辑
+### Code structure: how the logic is implemented
 
 ```text
-User input / 用户输入
+User input
   -> app.js: interface state, request IDs, review and copy
   -> worker.mjs: local tokenizer + Python/WASM runtime
   -> bridge (bundled in worker): JS/Python messages, latest plan
@@ -199,11 +218,11 @@ User input / 用户输入
        3. context_optimizer.py: explicit references / exact duplicate prose
        4. prompt_compressor.py -> structural_compactor.py: JSON whitespace
      First applicable strategy, not four transformations always chained.
-  -> candidate + metrics / 候选与计数
+  -> candidate + metrics
   -> user review -> Engine.confirm() -> copy to the user's assistant
 ```
 
-| Module / 模块 | Responsibility / 职责 | Important boundary / 边界 |
+| Module | Responsibility | Important boundary |
 | --- | --- | --- |
 | `cachescope/engine.py` | Select a strategy, keep the original baseline, validate and confirm | Does not call the target model or verify its answer |
 | `cachescope/config.py` | Input and confirmation limits | Default 50,000 characters, 900-second confirmation window |
@@ -232,8 +251,8 @@ This README is both a user guide and a technical design note. It distinguishes
 research methods**. A formula below is not evidence that the corresponding
 measurement or prediction is already available in the web demo.
 
-- [User workflow](#how-to-use-it--用户怎么使用)
-- [Technical core / 原理、公式与代码结构](#technical-core--原理公式与代码结构)
+- [User workflow](#how-to-use-it)
+- [Technical core: principles, formulas and code structure](#technical-core-principles-formulas-and-code-structure)
 - [Project motivation and scope](#why-this-project-exists)
 - [Architecture](#architecture-what-runs-where)
 - [Optimization principles](#personal-mode-principle-and-formulas)
@@ -243,40 +262,44 @@ measurement or prediction is already available in the web demo.
 - [Cache economics](#team-api-principle-caching-and-keepalive)
 - [Evaluation protocol](#evaluation-how-an-improvement-should-be-demonstrated)
 - [Evidence and limits](#evidence-and-limitations)
-- [Current limitations](#current-limitations--当前局限性)
+- [Current limitations](#current-limitations)
 - [Files and reproducibility](#public-file-map)
 - [Privacy](#privacy-and-safe-use)
 - [Roadmap and contributions](#development-direction)
 
-## How to use it / 用户怎么使用
+## How to use it
 
 ### Start here: no installation or API key
 
-1. Open [CacheScope Web](https://thisisyk.github.io/cachescope-web/) and choose English or 中文 in the top-right corner.
-2. Read the experimental-use notice, tick the agreement box and click **Start local engine / 启动本地引擎**. The first load downloads the runtime and tokenizer; wait for initialization before previewing.
-3. Stay in **Personal / 个人精简**. Choose your intended platform, then paste the task and context you were going to send into **Your task / 你的任务**. You can click **Try an example / 试用示例** first. The platform choice is informational, not an account connection.
-4. Click **Check & preview / 检查并预览**. Compare the original with **Candidate / 候选内容** and inspect the local token counts under **This result / 本次结果**.
-5. Check that numbers, names, negations, formatting requirements and all task instructions remain correct. If satisfied, tick **I reviewed the important facts and requirements / 我已核对重要事实与要求**, then click **Confirm & copy / 确认并复制**.
+1. Open [CacheScope Web](https://thisisyk.github.io/cachescope-web/) and choose English or Chinese in the top-right corner.
+2. Read the experimental-use notice, tick the agreement box and click **Start local engine**. The first load downloads the runtime and tokenizer; wait for initialization before previewing.
+3. Stay in **Personal**. Choose your intended platform, then paste the task and context you were going to send into **Your task**. You can click **Try an example** first. The platform choice is informational, not an account connection.
+4. Click **Check & preview**. Compare the original with **Candidate** and inspect the local token counts under **This result**.
+5. Check that numbers, names, negations, formatting requirements and all task instructions remain correct. If satisfied, tick **I reviewed the important facts and requirements**, then click **Confirm & copy**.
 6. Paste the copied text into ChatGPT, Claude, Codex or your preferred assistant and send it yourself. CacheScope does not send the message or edit another app's input box.
-7. Optionally click **Download result (no prompt text) / 下载结果（不含原文）** to keep the local measurement report. This is not a report of measured subscription savings.
+7. Optionally click **Download result (no prompt text)** to keep the local measurement report. This is not a report of measured subscription savings.
 
-中文快速流程：打开网页 → 选择语言 → 阅读并同意说明 → 启动本地引擎 →
-粘贴任务（或试用示例）→ 检查并预览 → 核对候选 → 勾选已核对 → 确认并复制 →
-粘贴到你原来使用的聊天工具，由你自己发送。无需安装 Python，也不需要在网页填写 API Key。
+Quick workflow: open the webpage → choose a language → read and accept the notice →
+start the local engine → paste a task (or try an example) → check and preview →
+review the candidate → tick the review box → confirm and copy → paste into your
+usual chat tool and send it yourself. No Python installation or API key entered
+on the webpage is needed.
 
-### How to interpret the result / 怎么看结果
+### How to interpret the result
 
-- **Original tokens / 原文 Token** and **Candidate tokens / 候选 Token** are local `cl100k_base` counts. They are not live readings from your selected platform.
-- **Local input reduction / 本地输入减少** measures the difference between those counts, not API billing or remaining subscription quota.
+- **Original tokens** and **Candidate tokens** are local `cl100k_base` counts. They are not live readings from your selected platform.
+- **Local input reduction** measures the difference between those counts, not API billing or remaining subscription quota.
 - If the text is unchanged or reduction is 0%, no applicable shorter candidate was found. Use the original; a nonzero result is not forced.
 - If important information is missing, do not approve the candidate. Use the original and report an anonymized example if you want to help improve the project.
 - If you edit the input or approval expires, click **Check & preview** again. If clipboard permission is denied, follow the page's instruction to copy the selected text with Ctrl+C.
 
-中文提醒：减少的是当前输入的本地估算 token，不等于平台总消耗或订阅额度同比减少。
-候选不合适就用原文；没有缩短不代表必须继续删减。请先用非敏感示例体验，不要为了
-获得更高比例而删除任务所必需的信息。
+Reminder: the reduction concerns locally estimated tokens for the current input;
+it does not imply the same percentage reduction in total platform consumption or
+subscription quota. Use the original if the candidate is unsuitable; an unchanged
+result does not mean you must keep deleting. Start with non-sensitive examples,
+and do not remove information required for the task to achieve a higher percentage.
 
-### Team API users / 团队 API 用户
+### Team API users
 
 The public webpage does not run a gateway or keepalive. Its Team API tab is an
 explanation, not a one-click connection to your application. The desktop build
@@ -290,9 +313,11 @@ application to use the displayed local API endpoint. Run a small request and
 inspect reported usage before considering opt-in keepalive. Provider calls can
 cost money, and unsigned Windows builds may be blocked by device policy.
 
-团队版目前不是公开网页里可直接运行的功能。需要桌面版本及相应访问权限，
-并在本地配置供应商连接和应用入口。初次使用先观察，不要把启用 keepalive
-当作必然省钱；不要在网页或公开 Issue 中填写密钥。
+Team functionality cannot currently run directly on the public webpage. It
+requires the desktop version and the appropriate access, with provider
+connections and application endpoints configured locally. Observe behavior
+first when starting out; enabling keepalive does not guarantee savings. Do not
+enter keys on the webpage or in public Issues.
 
 ## Help wanted and next steps
 
@@ -308,9 +333,11 @@ There is no promised savings rate, production-readiness guarantee or commercial
 support. Shorter input is not proof of lower ChatGPT, Claude or Codex subscription
 consumption, and the current checks cannot guarantee quality on every task.
 
-中文说明：这是我正在开发的个人学习与研究项目，不是商业版本，也不是已经
-完成验证的省额度产品。欢迎帮助测试中英文任务、反馈问题、分享论文和提出
-改进建议。可以通过 Issues 联系我；请勿上传隐私内容或密钥。
+Additional note: this is a personal learning and research project I am developing,
+not a commercial release or a validated quota-saving product. Help testing
+English and Chinese tasks, reporting issues, sharing papers and suggesting
+improvements is welcome. You can contact me through Issues; please do not upload
+private content or keys.
 
 ## What the demo does
 
@@ -843,7 +870,7 @@ Passing software tests establishes tested behavior, not real-world savings.
 Narrow record-lookup results cannot be generalized to all tasks. No fixed
 30–40% savings target is advertised as an achieved result.
 
-## Current limitations / 当前局限性
+## Current limitations
 
 These are known boundaries of the current version, not small-print exceptions
 to a promised saving. The project should be used for exploratory testing, with
@@ -881,11 +908,14 @@ a billing auditor, a subscription quota meter, a legal/compliance guarantee or
 a production cost-reduction contract. Do not treat a green check or smaller token
 number as independent proof of answer quality.
 
-中文总结：目前能做的是本地预览和部分结构化精简，不是“任意任务都能省额度”。
-我们还没有证明通用订阅额度节省，也不能保证删减后的模型答案始终等价。
-公开网页不读取账户用量，不自动发送任务，不运行团队 Gateway。Windows 桌面包
-仍存在未签名兼容限制。这些边界会保留在说明中，不会用模拟、局部成功案例或
-测试通过数量代替真实节省证据。
+Summary: the current capabilities are local preview and some structured input
+reduction, not quota savings for arbitrary tasks. General subscription quota
+savings have not been demonstrated, and equivalent model answers after deletion
+cannot be guaranteed. The public webpage does not read account usage, automatically
+send tasks or run the team gateway. The Windows desktop package still has
+compatibility limitations because it is unsigned. These boundaries will remain
+documented; simulations, isolated successes and counts of passing tests will not
+be substituted for evidence of real savings.
 
 ## Public file map
 
@@ -1011,7 +1041,7 @@ A learned compressor would add model loading, inference latency and potentially
 extra paid calls; it should beat the rule-based baseline after those costs are
 included. More training data or epochs alone do not demonstrate an improvement.
 
-### Implementation priorities / 还需要开发的地方
+### Implementation priorities
 
 This is a proposed order, not a statement that these items are complete or funded.
 
@@ -1057,9 +1087,11 @@ contribution workflow. Keep the public browser distribution distinct from the
 private full source, and document what contributors can actually reproduce.
 None of these packaging changes by themselves prove a savings claim.
 
-中文开发顺序：先把安全边界和真实测量补完整，再扩展日常中英文任务与兼容性，
-最后用严格对照实验判断训练模型、缓存预测等复杂方案是否值得加入。每一步都需要
-验收依据，而不是只增加功能按钮或宣称一个节省百分比。
+Development sequence: first complete the safety boundaries and real measurement,
+then expand everyday English/Chinese task coverage and compatibility. Finally,
+use rigorous controlled experiments to decide whether complex approaches such as
+trained models and cache prediction are worth adding. Every step needs acceptance
+evidence, not just more feature buttons or a claimed savings percentage.
 
 ### How to contribute a useful report
 
@@ -1084,22 +1116,32 @@ rather than hand-editing a minified worker. Please do not disclose vulnerabiliti
 with credentials or exploitable private data in a public report. A formal security
 disclosure process and commercial support program have not been established.
 
-### 中文技术导读
+### Technical reading guide
 
-本项目分成两个思路：个人模式减少任务里不必要的输入；团队模式研究重复前缀
-能否复用，以及 keepalive 的额外费用是否值得。目前公开网页只运行个人模式。
-核心不是一个已经训练好的通用压缩大模型，而是规则选择器、结构检查、tokenizer
-和人工确认流程。它不会自动读取你的订阅额度，也不会直接操作其他软件的输入框。
+The project follows two approaches: personal mode reduces unnecessary task
+input; team mode studies whether repeated prefixes can be reused and whether
+keepalive is worth its additional cost. The public webpage currently runs only
+personal mode. Its core is not a trained general-purpose large compression model,
+but a rule selector, structural checks, a tokenizer and a human confirmation
+workflow. It does not automatically read your subscription quota or directly
+operate input boxes in other software.
 
-个人模式的公式是 `1 - 候选 token / 原文 token`。这只是输入层面的变化；
-真正评价任务效果，还要统计输出、错误重试、优化开销和质量差异。团队模式的判断
-则是“未来复用概率 × 缓存命中改善 × 单次可省费用 − 保活等额外费用”。两类指标
-不能混为一谈，更不能把本地 token 减少直接换算成订阅额度节省。
+The personal-mode formula is `1 - candidate tokens / original tokens`. This
+describes only an input-level change; evaluating actual task outcomes also
+requires accounting for outputs, error retries, optimization overhead and quality
+differences. The team-mode decision is based on "future reuse probability ×
+cache-hit improvement × avoidable cost per reuse − additional costs such as
+keepalive". These two kinds of metrics must not be conflated, and local token
+reduction cannot be directly converted into subscription quota savings.
 
-程序先尝试适用范围很窄的记录选择，再尝试受限的 Python 依赖选择、文档选择
-或去重，最后尝试 JSON 空白精简。不适用时可以保留原文。检查保证的是声明范围内
-的结构一致性，不是“所有任务都完全无损”。未来重点是扩大适用范围、增强质量检查、
-做好独立评测，并欢迎其他开发者帮助验证失败案例，而不是把实验结果包装成商业保证。
+The program first tries narrowly scoped record selection, then restricted Python
+dependency selection, document selection or deduplication, and finally JSON
+whitespace compaction. It can retain the original when no transformation applies.
+Its checks guarantee structural consistency within the declared scope, not
+complete losslessness for every task. Future priorities are expanding coverage,
+strengthening quality checks and conducting independent evaluations. Help from
+other developers in verifying failure cases is welcome; experimental results
+should not be packaged as commercial guarantees.
 
 ## Runtime and licenses
 
